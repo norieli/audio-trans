@@ -11,7 +11,8 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QStackedWidget, QProgressBar,
                              QTextEdit, QMessageBox, QFileDialog, QLineEdit,
                              QRadioButton, QButtonGroup, QGroupBox, QTableWidget,
-                             QTableWidgetItem, QComboBox, QInputDialog, QHeaderView)
+                             QTableWidgetItem, QComboBox, QInputDialog, QHeaderView,
+                             QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QApplication
@@ -47,20 +48,29 @@ class MainWindow(QMainWindow):
     def _init_ui(self):
         """Initialize UI components"""
         self.setWindowTitle("AudioTrans AI - 音转译 AI")
-        self.setGeometry(100, 100, 900, 700)
+        self.setGeometry(100, 100, 950, 750)
+        self.setMinimumSize(800, 600)
 
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
+        layout.setContentsMargins(20, 15, 20, 15)
+        layout.setSpacing(15)
 
-        # Step indicator
-        self.step_label = QLabel(f"步骤 1/12: 选择目录")
-        self.step_label.setFont(QFont("Arial", 14, QFont.Bold))
+        # Step progress indicator
+        self._create_step_indicator(layout)
+
+        # Step title
+        self.step_label = QLabel()
+        self.step_label.setObjectName("stepTitle")
+        self.step_label.setFont(QFont("Segoe UI", 16, QFont.Bold))
         self.step_label.setAlignment(Qt.AlignCenter)
+        self.step_label.setStyleSheet("color: #FFFFFF; padding: 10px;")
         layout.addWidget(self.step_label)
 
         # Step content area
         self.step_stack = QStackedWidget()
+        self.step_stack.setObjectName("stepContent")
         layout.addWidget(self.step_stack)
 
         # Create all step pages
@@ -68,10 +78,18 @@ class MainWindow(QMainWindow):
 
         # Navigation buttons
         nav_layout = QHBoxLayout()
-        self.prev_btn = QPushButton("上一步")
+        nav_layout.setContentsMargins(0, 10, 0, 0)
+
+        self.prev_btn = QPushButton("← 上一步")
+        self.prev_btn.setObjectName("navButton")
+        self.prev_btn.setFixedWidth(120)
         self.prev_btn.clicked.connect(self._prev_step)
-        self.next_btn = QPushButton("下一步")
+
+        self.next_btn = QPushButton("下一步 →")
+        self.next_btn.setObjectName("navButton")
+        self.next_btn.setFixedWidth(120)
         self.next_btn.clicked.connect(self._next_step)
+
         nav_layout.addWidget(self.prev_btn)
         nav_layout.addStretch()
         nav_layout.addWidget(self.next_btn)
@@ -79,8 +97,73 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self.statusBar().showMessage("就绪")
+        self.statusBar().setStyleSheet("padding: 5px;")
 
         self._update_navigation()
+
+    def _create_step_indicator(self, parent_layout):
+        """Create horizontal step progress indicator"""
+        step_container = QWidget()
+        step_container.setObjectName("stepIndicator")
+        step_container.setStyleSheet("""
+            QWidget#stepIndicator {
+                background-color: #F3F3F3;
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        step_layout = QHBoxLayout(step_container)
+        step_layout.setContentsMargins(20, 8, 20, 8)
+
+        self.step_buttons = []
+        for i in range(1, 13):
+            btn = QLabel(f"{i}")
+            btn.setFixedSize(28, 28)
+            btn.setAlignment(Qt.AlignCenter)
+            btn.setStyleSheet("""
+                QLabel {
+                    background-color: #E5E5E5;
+                    border-radius: 14px;
+                    color: #666666;
+                    font-weight: 600;
+                    font-size: 11px;
+                }
+            """)
+            self.step_buttons.append(btn)
+            step_layout.addWidget(btn)
+
+            if i < 12:
+                spacer = QWidget()
+                spacer.setFixedHeight(2)
+                spacer.setStyleSheet("background-color: #E5E5E5;")
+                spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                step_layout.addWidget(spacer)
+
+        step_layout.setStretch(0, 0)
+        step_layout.setStretch(1, 1)
+        step_layout.setStretch(2, 0)
+        step_layout.setStretch(3, 1)
+        step_layout.setStretch(4, 0)
+        step_layout.setStretch(5, 1)
+        step_layout.setStretch(6, 0)
+        step_layout.setStretch(7, 1)
+        step_layout.setStretch(8, 0)
+        step_layout.setStretch(9, 1)
+        step_layout.setStretch(10, 0)
+        step_layout.setStretch(11, 1)
+        step_layout.setStretch(12, 0)
+        step_layout.setStretch(13, 1)
+        step_layout.setStretch(14, 0)
+        step_layout.setStretch(15, 1)
+        step_layout.setStretch(16, 0)
+        step_layout.setStretch(17, 1)
+        step_layout.setStretch(18, 0)
+        step_layout.setStretch(19, 1)
+        step_layout.setStretch(20, 0)
+        step_layout.setStretch(21, 1)
+        step_layout.setStretch(22, 0)
+
+        parent_layout.addWidget(step_container)
 
     def _init_models(self):
         """Initialize ML models (lazy load)"""
@@ -881,9 +964,43 @@ class MainWindow(QMainWindow):
 
     def _update_navigation(self):
         """Update navigation buttons and step label"""
-        self.step_label.setText(f"步骤 {self.current_step}/{self.total_steps}: {self._get_step_name()}")
+        self.step_label.setText(f"步骤 {self.current_step}: {self._get_step_name()}")
         self.prev_btn.setEnabled(self.current_step > 1)
-        self.next_btn.setText("完成" if self.current_step == self.total_steps else "下一步")
+        self.next_btn.setText("完成" if self.current_step == self.total_steps else "下一步 →")
+
+        # Update step indicator buttons
+        for i, btn in enumerate(self.step_buttons):
+            step_num = i + 1
+            if step_num == self.current_step:
+                btn.setStyleSheet("""
+                    QLabel {
+                        background-color: #0078D4;
+                        border-radius: 14px;
+                        color: #FFFFFF;
+                        font-weight: 600;
+                        font-size: 11px;
+                    }
+                """)
+            elif step_num < self.current_step:
+                btn.setStyleSheet("""
+                    QLabel {
+                        background-color: #107C10;
+                        border-radius: 14px;
+                        color: #FFFFFF;
+                        font-weight: 600;
+                        font-size: 11px;
+                    }
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QLabel {
+                        background-color: #E5E5E5;
+                        border-radius: 14px;
+                        color: #999999;
+                        font-weight: 600;
+                        font-size: 11px;
+                    }
+                """)
 
     def _get_step_name(self) -> str:
         """Get step name"""

@@ -47,6 +47,10 @@ def main():
     app.setApplicationName("AudioTrans AI")
     app.setOrganizationName("AudioTrans")
 
+    # Apply dark theme
+    from ui.theme import MAIN_STYLE
+    app.setStyleSheet(MAIN_STYLE)
+
     print("[Main] Starting AudioTrans AI...")
     sys.stdout.flush()
 
