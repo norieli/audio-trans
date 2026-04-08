@@ -6,23 +6,27 @@ import sys
 import os
 import traceback
 
+# Helper function to safely print and flush
+def log(msg):
+    """Safe print and flush for both console and windowed mode"""
+    print(msg)
+    if sys.stdout:
+        sys.stdout.flush()
+
 # IMPORTANT: Set HuggingFace mirror BEFORE importing faster-whisper
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 os.environ["HF_MIRROR"] = "https://hf-mirror.com"
 
 # Pre-load the model to avoid Qt threading issues
-print("[Main] Pre-loading Whisper model...")
-sys.stdout.flush()
+log("[Main] Pre-loading Whisper model...")
 
 WHISPER_MODEL = None
 try:
     from src.core.whisper_transcriber import WhisperTranscriber
     WHISPER_MODEL = WhisperTranscriber("base")
-    print("[Main] Whisper model pre-loaded successfully!")
-    sys.stdout.flush()
+    log("[Main] Whisper model pre-loaded successfully!")
 except Exception as e:
-    print(f"[Main] Warning: Could not pre-load model: {e}")
-    sys.stdout.flush()
+    log(f"[Main] Warning: Could not pre-load model: {e}")
 
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -57,17 +61,15 @@ def main():
     from ui.theme import MAIN_STYLE
     app.setStyleSheet(MAIN_STYLE)
 
-    print("[Main] Starting AudioTrans AI...")
-    sys.stdout.flush()
+    log("[Main] Starting AudioTrans AI...")
 
     try:
         window = MainWindow(whisper_model=WHISPER_MODEL)
         window.show()
-        print("[Main] Window shown successfully")
-        sys.stdout.flush()
+        log("[Main] Window shown successfully")
         sys.exit(app.exec_())
     except Exception as e:
-        print(f"[Main] FATAL ERROR: {e}")
+        log(f"[Main] FATAL ERROR: {e}")
         traceback.print_exc()
         sys.exit(1)
 
