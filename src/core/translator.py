@@ -8,13 +8,39 @@ import requests
 from pathlib import Path
 from typing import List, Tuple, Optional
 
+# 设置大陆镜像源
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+# 本地翻译模型
+LOCAL_MODEL = None
+LOCAL_TRANSLATOR = None
+
+
+def load_local_model():
+    """Load local translation model (lazy load)"""
+    global LOCAL_MODEL, LOCAL_TRANSLATOR
+    if LOCAL_TRANSLATOR is None:
+        try:
+            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+            print("Loading local translation model...")
+            # 使用轻量级英中翻译模型
+            model_name = "Helsinki-NLP/opus-mt-en-zh"
+            LOCAL_MODEL = model_name
+            LOCAL_TRANSLATOR = {
+                "tokenizer": AutoTokenizer.from_pretrained(model_name),
+                "model": AutoModelForSeq2SeqLM.from_pretrained(model_name)
+            }
+            print("Local translation model loaded!")
+        except Exception as e:
+            print(f"Failed to load local model: {e}")
+            LOCAL_TRANSLATOR = None
+    return LOCAL_TRANSLATOR is not None
+
 
 class Translator:
     """Handles subtitle translation (local or AI)"""
 
     DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-    # Free translation API (MyMemory)
-    MYMEMORY_API_URL = "https://api.mymemory.translated.net/get"
 
     def __init__(self, mode: str = "local"):
         """
@@ -108,27 +134,29 @@ class Translator:
 
     def _translate_local(self, text: str) -> str:
         """
-        Local translation using free MyMemory API
+        Local translation using CSANMT model (Hugging Face)
+        本地翻译使用CSANMT模型
         """
         try:
-            params = {
-                "q": text,
-                "langpair": "en|zh"
-            }
-            response = requests.get(
-                self.MYMEMORY_API_URL,
-                params=params,
-                timeout=10
-            )
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("responseStatus") == 200:
-                    return data.get("responseData", {}).get("translatedText", text)
-            return text
+            # 懒加载模型
+            if not load_local_model():
+                return "[错误: 本地模型加载失败，请检查transformers库]"
+
+            tokenizer = LOCAL_TRANSLATOR["tokenizer"]
+            model = LOCAL_TRANSLATOR["model"]
+
+            # 翻译文本
+            inputs = tokenizer(text, return_tensors="pt", padding=True)
+
+            # 生成翻译
+            outputs = model.generate(**inputs, max_new_tokens=256)
+
+            translated = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            return translated
+
         except Exception as e:
-            # Fallback: return original text
             print(f"Local translation error: {e}")
-            return text
+            return f"[翻译失败: {str(e)[:50]}]"
 
     def _translate_ai(self, text: str) -> str:
         """
@@ -175,9 +203,9 @@ class Translator:
             return f"[翻译失败: 网络错误]"
 
     def check_network(self) -> bool:
-        """Check if network is available"""
+        """Check if network is available (mainly for AI translation)"""
         try:
-            requests.get("https://api.mymemory.translated.net", timeout=5)
+            requests.get("https://api.deepseek.com", timeout=5)
             return True
         except:
             return False

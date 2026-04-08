@@ -6,7 +6,7 @@ Windows桌面应用程序 - 音频整理、字幕转写、翻译一体化工具
 
 - **音频整理** - 按关键词/前缀/后缀递归筛选MP3文件，支持重命名
 - **字幕转写** - 基于Whisper AI的音频转字幕(LRC格式)，支持批量处理
-- **双语翻译** - 免费MyMemory API或DeepSeek AI翻译
+- **双语翻译** - 本地CSANMT模型(离线)或DeepSeek AI翻译
 - **12步向导** - 简洁易用的向导流程
 
 ## 系统要求
@@ -63,11 +63,14 @@ pyinstaller --onefile --name AudioTransAI main.py
 - PyQt5 >= 5.15.0
 - faster-whisper >= 0.10.0
 - requests >= 2.28.0
+- transformers >= 4.30.0
+- torch >= 2.0.0
+- sentencepiece >= 0.1.99
 
 ## 配置
 
 - API Key存储: `~/.audiotrans/config.json` (base64编码)
-- 模型: Whisper base (首次运行自动从镜像站下载)
+- 模型: Whisper base + Helsinki-NLP翻译模型 (首次运行自动下载)
 
 ## 输出文件
 

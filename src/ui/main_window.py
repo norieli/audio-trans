@@ -13,9 +13,105 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QRadioButton, QButtonGroup, QGroupBox, QTableWidget,
                              QTableWidgetItem, QComboBox, QInputDialog, QHeaderView,
                              QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QApplication
+
+
+class BatchTranscribeWorker(QThread):
+    """Worker thread for batch transcription"""
+    progress = pyqtSignal(int, int, str)  # current, total, filename
+    log = pyqtSignal(str)
+    finished = pyqtSignal(int, int)  # success, failed
+
+    def __init__(self, whisper, audio_files, output_dir):
+        super().__init__()
+        self.whisper = whisper
+        self.audio_files = audio_files
+        self.output_dir = output_dir
+
+    def run(self):
+        success = 0
+        failed = 0
+        total = len(self.audio_files)
+
+        for i, audio_file in enumerate(self.audio_files):
+            self.progress.emit(i + 1, total, Path(audio_file).name)
+
+            audio_name = Path(audio_file).stem
+            lrc_path = os.path.join(self.output_dir, f"{audio_name}.lrc")
+
+            # Skip if already exists
+            if os.path.exists(lrc_path):
+                success += 1
+                self.log.emit(f"跳过: {audio_name}.lrc (已存在)")
+            else:
+                try:
+                    ok, result = self.whisper.transcribe_to_lrc(audio_file, lrc_path)
+                    if ok:
+                        success += 1
+                        self.log.emit(f"处理成功: {audio_name}.lrc")
+                    else:
+                        failed += 1
+                        self.log.emit(f"处理失败: {audio_name}")
+                except Exception as e:
+                    failed += 1
+                    self.log.emit(f"错误: {e}")
+
+        self.finished.emit(success, failed)
+
+
+class BatchTranslateWorker(QThread):
+    """Worker thread for batch translation"""
+    progress = pyqtSignal(int, int, str)  # current, total, filename
+    log = pyqtSignal(str)
+    finished = pyqtSignal(int, int)  # success, failed
+
+    def __init__(self, translator, lrc_files, output_dir):
+        super().__init__()
+        self.translator = translator
+        self.lrc_files = lrc_files
+        self.output_dir = output_dir
+
+    def run(self):
+        success = 0
+        failed = 0
+        total = len(self.lrc_files)
+
+        for i, lrc_file in enumerate(self.lrc_files):
+            self.progress.emit(i + 1, total, Path(lrc_file).name)
+
+            try:
+                ok, result = self.translator.translate_lrc(str(lrc_file))
+                if ok:
+                    success += 1
+                    self.log.emit(f"翻译成功: {Path(result).name}")
+                else:
+                    failed += 1
+                    self.log.emit(f"翻译失败: {lrc_file}")
+            except Exception as e:
+                failed += 1
+                self.log.emit(f"错误: {e}")
+
+        self.finished.emit(success, failed)
+
+
+class SingleTranslateWorker(QThread):
+    """Worker thread for single file translation"""
+    finished = pyqtSignal(bool, str)  # success, result
+
+    def __init__(self, translator, lrc_file):
+        super().__init__()
+        self.translator = translator
+        self.lrc_file = lrc_file
+
+    def run(self):
+        try:
+            ok, result = self.translator.translate_lrc(self.lrc_file)
+            self.finished.emit(ok, result)
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
 
 from utils.config_manager import ConfigManager
 from utils.file_utils import FileUtils
@@ -686,7 +782,7 @@ class MainWindow(QMainWindow):
         self._do_batch_transcribe()
 
     def _do_batch_transcribe(self):
-        """Do the actual batch transcription"""
+        """Do the actual batch transcription using worker thread"""
         audio_files = FileUtils.get_audio_files(self.output_dir)
         if not audio_files:
             self.batch_subtitle_status.setText("输出目录无音频文件")
@@ -696,55 +792,32 @@ class MainWindow(QMainWindow):
         self.batch_subtitle_progress.setValue(0)
         self.batch_subtitle_log.clear()
 
-        self.pause_btn.setEnabled(True)
+        self.pause_btn.setEnabled(False)
         self.terminate_btn.setEnabled(True)
         self.batch_subtitle_btn.setEnabled(False)
 
-        # Process files
-        success = 0
-        failed = 0
+        # Create and start worker thread
+        self.worker = BatchTranscribeWorker(self.whisper, audio_files, self.output_dir)
+        self.worker.progress.connect(self._on_batch_progress)
+        self.worker.log.connect(self._on_batch_log)
+        self.worker.finished.connect(self._on_batch_finished)
+        self.worker.start()
 
-        def process_next(index=0):
-            if index >= len(audio_files):
-                self.batch_subtitle_status.setText(f"完成: 成功 {success}, 失败 {failed}")
-                self.pause_btn.setEnabled(False)
-                self.terminate_btn.setEnabled(False)
-                self.batch_subtitle_btn.setEnabled(True)
-                return
+    def _on_batch_progress(self, current, total, filename):
+        """Handle progress update"""
+        self.batch_subtitle_progress.setValue(current)
+        self.batch_subtitle_status.setText(f"处理中: {current}/{total}")
 
-            # Process events to keep UI responsive
-            QApplication.processEvents()
+    def _on_batch_log(self, message):
+        """Handle log message"""
+        self.batch_subtitle_log.append(message)
 
-            audio_file = audio_files[index]
-            self.batch_subtitle_progress.setValue(index + 1)
-            self.batch_subtitle_log.append(f"正在处理: {Path(audio_file).name}")
-
-            audio_name = Path(audio_file).stem
-            lrc_path = os.path.join(self.output_dir, f"{audio_name}.lrc")
-
-            # Skip if already exists
-            if os.path.exists(lrc_path):
-                success += 1
-            else:
-                try:
-                    ok, result = self.whisper.transcribe_to_lrc(audio_file, lrc_path)
-                    if ok:
-                        success += 1
-                        self.batch_subtitle_log.append(f"处理成功: {audio_name}.lrc")
-                    else:
-                        failed += 1
-                        self.batch_subtitle_log.append(f"处理失败: {audio_name}")
-                except Exception as e:
-                    failed += 1
-                    self.batch_subtitle_log.append(f"错误: {e}")
-
-            # Process events again
-            QApplication.processEvents()
-
-            # Process next file
-            QTimer.singleShot(10, lambda i=index+1: process_next(i))
-
-        process_next(0)
+    def _on_batch_finished(self, success, failed):
+        """Handle batch completion"""
+        self.batch_subtitle_status.setText(f"完成: 成功 {success}, 失败 {failed}")
+        self.pause_btn.setEnabled(False)
+        self.terminate_btn.setEnabled(False)
+        self.batch_subtitle_btn.setEnabled(True)
 
     # ==================== Step 9: Translate First Subtitle ====================
     def _create_step9(self) -> QWidget:
@@ -806,19 +879,19 @@ class MainWindow(QMainWindow):
         first_lrc = str(sorted(lrc_files)[0])
         self.translate_first_status.setText("正在翻译...")
 
-        def translate():
-            try:
-                ok, result = self.translator.translate_lrc(first_lrc)
-                if ok:
-                    self.translate_first_status.setText(f"翻译完成: {result}")
-                else:
-                    self.translate_first_status.setText(f"翻译失败: {result}")
-            except Exception as e:
-                self.translate_first_status.setText(f"翻译失败: {e}")
-
-        QTimer.singleShot(100, translate)
+        # Use worker thread to avoid blocking UI
+        self.translate_worker = SingleTranslateWorker(self.translator, first_lrc)
+        self.translate_worker.finished.connect(self._on_single_translate_finished)
+        self.translate_worker.start()
 
         self.config.set("translate_mode", mode)
+
+    def _on_single_translate_finished(self, ok, result):
+        """Handle single translation finished"""
+        if ok:
+            self.translate_first_status.setText(f"翻译完成: {result}")
+        else:
+            self.translate_first_status.setText(f"翻译失败: {result}")
 
     # ==================== Step 10: Review Translation ====================
     def _create_step10(self) -> QWidget:
@@ -840,7 +913,10 @@ class MainWindow(QMainWindow):
 
     def _open_first_translation(self):
         """Open first translation file"""
-        translation_files = list(Path(self.output_dir).glob("*中文翻译.txt"))
+        # 翻译文件命名为 {原音频名}.txt
+        translation_files = list(Path(self.output_dir).glob("*.txt"))
+        # 过滤掉可能的lrc文件
+        translation_files = [f for f in translation_files if not f.name.endswith('.lrc')]
         if translation_files:
             FileUtils.open_file(str(translation_files[0]))
 
@@ -880,37 +956,41 @@ class MainWindow(QMainWindow):
             self.batch_translate_status.setText("无字幕文件可翻译")
             return
 
+        # Initialize translator if not already done
+        if not self.translator:
+            mode = "local" if self.translate_mode_group.checkedId() == 0 else "ai"
+            self.translator = Translator(mode)
+            if mode == "ai":
+                api_key = self.api_key_edit.text().strip()
+                if api_key:
+                    self.translator.set_api_key(api_key)
+
         self.batch_translate_progress.setMaximum(len(lrc_files))
         self.batch_translate_progress.setValue(0)
         self.batch_translate_log.clear()
 
-        def translate_next(index=0):
-            if index >= len(lrc_files):
-                self.batch_translate_status.setText("批量翻译完成")
-                return
+        self.batch_translate_btn.setEnabled(False)
 
-            # Process events to keep UI responsive
-            QApplication.processEvents()
+        # Create and start worker thread
+        self.translate_worker = BatchTranslateWorker(self.translator, lrc_files, self.output_dir)
+        self.translate_worker.progress.connect(self._on_translate_progress)
+        self.translate_worker.log.connect(self._on_translate_log)
+        self.translate_worker.finished.connect(self._on_translate_finished)
+        self.translate_worker.start()
 
-            lrc_file = lrc_files[index]
-            self.batch_translate_progress.setValue(index + 1)
-            self.batch_translate_log.append(f"正在翻译: {lrc_file.name}")
+    def _on_translate_progress(self, current, total, filename):
+        """Handle progress update"""
+        self.batch_translate_progress.setValue(current)
+        self.batch_translate_status.setText(f"翻译中: {current}/{total}")
 
-            try:
-                ok, result = self.translator.translate_lrc(str(lrc_file))
-                if ok:
-                    self.batch_translate_log.append(f"翻译成功: {Path(result).name}")
-                else:
-                    self.batch_translate_log.append(f"翻译失败")
-            except Exception as e:
-                self.batch_translate_log.append(f"错误: {e}")
+    def _on_translate_log(self, message):
+        """Handle log message"""
+        self.batch_translate_log.append(message)
 
-            # Process events again
-            QApplication.processEvents()
-
-            QTimer.singleShot(10, lambda i=index+1: translate_next(i))
-
-        translate_next(0)
+    def _on_translate_finished(self, success, failed):
+        """Handle batch completion"""
+        self.batch_translate_status.setText(f"完成: 成功 {success}, 失败 {failed}")
+        self.batch_translate_btn.setEnabled(True)
 
     # ==================== Step 12: Complete ====================
     def _create_step12(self) -> QWidget:
