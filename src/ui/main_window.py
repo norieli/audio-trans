@@ -294,10 +294,49 @@ class MainWindow(QMainWindow):
         self.step_stack.addWidget(self.step12_widget)
 
     # ==================== Step 1: Select Directories ====================
+    def _show_about(self):
+        """Show about dialog"""
+        from PyQt5.QtWidgets import QMessageBox
+        from PyQt5.QtGui import QIcon
+        import os
+
+        msg = QMessageBox()
+        msg.setWindowTitle("关于 AudioTrans AI")
+
+        # Set icon
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'icons', 'icon.ico')
+        if os.path.exists(icon_path):
+            msg.setWindowIcon(QIcon(icon_path))
+
+        msg.setText("<b>AudioTrans AI - 音转译 AI</b>")
+        msg.setInformativeText(
+            "一款Windows桌面应用程序，用于音频文件整理、字幕转写和翻译。\n\n"
+            "功能特点:\n"
+            "• 音频整理 - 按关键词/前缀/后缀筛选MP3文件\n"
+            "• 字幕转写 - 基于Whisper AI转字幕(LRC格式)\n"
+            "• 双语翻译 - 本地CSANMT模型或DeepSeek AI\n\n"
+            "版本: 1.0.0\n\n"
+            "联系: idkudk@163.com"
+        )
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
     def _create_step1(self) -> QWidget:
         """Step 1: Select source and output directories"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+
+        # Header with title and about button
+        header_layout = QHBoxLayout()
+        title_label = QLabel("AudioTrans AI - 音转译")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header_layout.addWidget(title_label)
+
+        about_btn = QPushButton("关于")
+        about_btn.setFixedWidth(80)
+        about_btn.clicked.connect(self._show_about)
+        header_layout.addWidget(about_btn)
+        layout.addLayout(header_layout)
 
         layout.addWidget(QLabel("请选择源音频目录和输出目录"))
 

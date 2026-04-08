@@ -28,6 +28,7 @@ except Exception as e:
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QIcon
 from ui.main_window import MainWindow
 
 
@@ -46,6 +47,11 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("AudioTrans AI")
     app.setOrganizationName("AudioTrans")
+
+    # Set app icon
+    icon_path = os.path.join(os.path.dirname(__file__), 'icons', 'icon.ico')
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     # Apply dark theme
     from ui.theme import MAIN_STYLE
